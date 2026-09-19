@@ -1,0 +1,9 @@
+backend/.env
+frontend/.env
+mongodb_username.txt
+backend/uploads/*
+!backend/uploads/.gitkeep
+frontend/node_modules/
+backend/node_modules/
+frontend/build/
+*.log
