@@ -1,13 +1,12 @@
 const Post = require('../models/Post');
-const fs = require('fs');
-const path = require('path');
+const { v2: cloudinary } = require('cloudinary');
 
 const escapeRegExp = (value = '') => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const diaryAccessAllowed = (req) => process.env.DIARY_PASSWORD
   && req.get('x-diary-password') === process.env.DIARY_PASSWORD;
 
-const saveUploadedMedia = (mediaData, mediaName, mediaType, req) => {
+const saveUploadedMedia = (mediaData, mediaType) => {
   if (!mediaData) return { coverImage: '', videoUrl: '', mediaType: '' };
   if (!['image/', 'video/'].some((prefix) => mediaType.startsWith(prefix))) {
     const error = new Error('Only image and video files are supported');
@@ -23,13 +22,33 @@ const saveUploadedMedia = (mediaData, mediaName, mediaType, req) => {
     throw error;
   }
 
-  const extension = path.extname(mediaName || '').toLowerCase() || (mediaType.startsWith('video/') ? '.mp4' : '.jpg');
-  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}${extension}`;
-  fs.writeFileSync(path.join(__dirname, '..', 'uploads', filename), buffer);
-  const url = `${req.protocol}://${req.get('host')}/uploads/${filename}`;
-  return mediaType.startsWith('video/')
-    ? { coverImage: '', videoUrl: url, mediaType: 'video' }
-    : { coverImage: url, videoUrl: '', mediaType: 'image' };
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
+    const error = new Error('Cloudinary upload is not configured on the server');
+    error.status = 503;
+    throw error;
+  }
+
+  cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+  });
+
+  return new Promise((resolve, reject) => {
+    const upload = cloudinary.uploader.upload_stream(
+      { folder: 'blog-cms', resource_type: 'auto' },
+      (error, result) => {
+        if (error) {
+          reject(Object.assign(new Error(error.message || 'Cloudinary upload failed'), { status: 502 }));
+          return;
+        }
+        resolve(mediaType.startsWith('video/')
+          ? { coverImage: '', videoUrl: result.secure_url, mediaType: 'video' }
+          : { coverImage: result.secure_url, videoUrl: '', mediaType: 'image' });
+      }
+    );
+    upload.end(buffer);
+  });
 };
 
 exports.getPosts = async (req, res) => {
@@ -110,7 +129,7 @@ exports.createPost = async (req, res) => {
       return res.status(409).json({ message: 'A story with this title already exists in this category.' });
     }
 
-    const uploadedMedia = saveUploadedMedia(mediaData, mediaName, mediaType || '', req);
+    const uploadedMedia = await saveUploadedMedia(mediaData, mediaType || '');
     const post = await Post.create({
       title,
       content,
