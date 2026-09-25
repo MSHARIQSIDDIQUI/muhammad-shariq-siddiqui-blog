@@ -42,9 +42,18 @@ const saveUploadedMedia = (mediaData, mediaType) => {
           reject(Object.assign(new Error(error.message || 'Cloudinary upload failed'), { status: 502 }));
           return;
         }
-        resolve(mediaType.startsWith('video/')
-          ? { coverImage: '', videoUrl: result.secure_url, mediaType: 'video' }
-          : { coverImage: result.secure_url, videoUrl: '', mediaType: 'image' });
+        if (mediaType.startsWith('video/')) {
+          // Generate a still-frame thumbnail from the video so listings show a preview
+          // image instead of a blank placeholder behind the play badge.
+          const thumbnail = cloudinary.url(result.public_id, {
+            resource_type: 'video',
+            format: 'jpg',
+            transformation: [{ start_offset: '0' }],
+          });
+          resolve({ coverImage: thumbnail, videoUrl: result.secure_url, mediaType: 'video' });
+          return;
+        }
+        resolve({ coverImage: result.secure_url, videoUrl: '', mediaType: 'image' });
       }
     );
     upload.end(buffer);

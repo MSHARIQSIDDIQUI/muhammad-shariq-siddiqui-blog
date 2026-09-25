@@ -40,7 +40,7 @@ export default function PostDetail() {
 
       {post.videoUrl && post.mediaType === 'video' ? (
         <div className="article-media article-media--video">
-          <video src={post.videoUrl} controls playsInline />
+          <video src={post.videoUrl} controls playsInline poster={post.coverImage || undefined} />
         </div>
       ) : post.videoUrl ? (
         <div className="article-media article-media--video">
